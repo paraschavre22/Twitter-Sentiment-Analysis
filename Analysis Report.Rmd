@@ -1,0 +1,296 @@
+---
+author: "Paras_Vikas_Chavre"
+date: "1/22/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(rvest)
+library(robotstxt)
+library(stringr)
+library(xml2)
+library(XML)
+library(ggplot2)
+library(ggraph)
+library(dplyr)
+library(robotstxt)
+library(cld2)
+library(wordcloud)
+library(C50)
+library(tidytext)
+library(SnowballC)
+library(wordcloud2)
+library(udpipe)
+library(igraph)
+library(rtweet)
+library(lubridate)
+library(scales)
+library(DirichletReg)
+library(topicmodels)
+```
+
+## Exercise
+
+```{r}
+url <- "https://www.googleapis.com/books/v1/volumes/dGEEAAAAQAAJ?key=AIzaSyCMGpIKoOkdDlQLs9L10JP5OxySjvMDrrc"
+res <- jsonlite::fromJSON(url)
+tibble(res) 
+res
+
+
+```
+
+
+```{r}
+api_key <- "A4GshdiIw0wlsDPGdguTQrMnM"
+api_secret_key <- "xJprKKgpyXOD0kMJlAo2veRJjiyQUsQFAVFZb8giOsgFPzVBQb"
+access_token <- "582563074-ukzUS2Sn6OLQaO1ENefyEkjuayPnz97tDeJTYwbZ"
+access_token_secret <- "0TfJNPugjZs4PR9owRM6GmaJ414HYL59JezZ5kLYTRcGA"
+
+token <- create_token(app = "UnibgTwitter07", consumer_key = api_key,
+    consumer_secret = api_secret_key, access_token = access_token,
+    access_secret = access_token_secret, set_renv = FALSE)
+
+get_token()
+rate_limits()
+```
+
+
+
+```{r}
+query <- "Narendra modi india"
+data <- search_tweets(query, lang = "en", n = 5000, token = token)
+data
+data$text_lang = detect_language(data$text)
+table(Text = data$text_lang, useNA = "always")
+data = data %>%
+    filter(text_lang == "en")
+data
+```
+
+```{r}
+retweets_count <- search_tweets(query, n = 1000, lang = "en", filter = "retweets")
+retweets_count
+sum(retweets_count$retweet_count)
+```
+
+```{r}
+replies_count <- search_tweets(query, n = 1000, lang = "en", filter = "replies")
+replies_count
+sum(replies_count$reply_count)
+```
+
+```{r}
+quote_count <- search_tweets(query, n = 1000, lang = "en", filter = "quote")
+quote_count
+sum(quote_count$is_quote)
+```
+
+
+```{r}
+data %>%
+    select(created_at) %>%
+    mutate(date = round_date(created_at, unit = "hour")) %>%
+    count(date)
+```
+
+
+```{r}
+important_dates <- ymd_hms("2022-01-23 18:00:00", "2022-01-25 06:00:00")
+ts_plot(data, by = "hour", col = "steelblue", lwd = 1) + geom_vline(xintercept = important_dates,
+    linetype = 2, col = "red", lwd = 1) + theme_bw()
+```
+```{r}
+timeline <- get_timeline(c("narendramodi", "ArvindKejriwal"),
+    n = Inf, token = token)
+```
+
+```{r}
+timeline %>%
+    group_by(screen_name) %>%
+    ts_plot(by = "month") + ggplot2::labs(title = "Tweets by Politician",
+    subtitle = "Modi vs Kejriwal") + scale_colour_manual(values = c("steelblue",
+    "Red")) + theme_bw()
+```
+```{r}
+timeline <- timeline %>%
+    filter(created_at >= as.Date("2020-07-01"))
+    
+
+text <- timeline %>%
+    select(status_id, text, screen_name)
+
+tidy_tweets <- text %>%
+    unnest_tweets(word, text) %>%
+    anti_join(stop_words)
+
+
+tidy_tweets %>%
+    group_by(screen_name) %>%
+    count(word, sort = T) %>%
+    mutate(prop = n/sum(n)) %>%
+    select(screen_name, word, prop) %>%
+    pivot_wider(names_from = screen_name, values_from = prop) %>%
+    arrange(narendramodi, ArvindKejriwal) %>%
+    ggplot(aes(narendramodi, ArvindKejriwal)) + geom_jitter(alpha = 0.5,
+    size = 2.5, width = 0.25, height = 0.25, colour = "steelblue") +
+    geom_text(aes(label = word), check_overlap = T, vjust = 0) +
+    scale_x_log10(labels = percent_format()) + scale_y_log10(labels = percent_format()) +
+    geom_abline(color = "red") + theme_bw()
+```
+```{r}
+frame <- tidy_tweets %>%
+    filter(screen_name == "narendramodi") %>%
+    count(word, sort = T)
+frame <- data.frame(word = frame$word, freq = frame$n)
+wordcloud2(frame, color = "blue", size = 1.5)
+```
+```{r}
+tidy_tweets %>%
+    count(word) %>%
+    slice_max(n, n = 20) %>%
+    mutate(word = reorder(word, n)) %>%
+    ggplot(aes(word, n, fill = word)) + geom_bar(stat = "identity",
+    fill = "blue") + xlab(NULL) + labs(title = "Most common stems in reviews",
+    y = "Stems count") + theme(legend.position = "none", plot.title = element_text(color = "steelblue",
+    size = 12, face = "bold")) + coord_flip() + theme_bw()
+```
+```{r}
+tidy_tweets %>%
+    count(word) %>%
+    with(wordcloud(scale = c(5, 0.7), word, n, max.words = 100,
+        min.freq = 2, random.order = F, rot.per = 0.15, colors = brewer.pal(8,
+            "Paired")))
+```
+```{r}
+
+user_id = "@narendramodi" 
+# User_id = 18839785
+data <- get_timeline(user_id, n = 5000, token = token)
+data
+data$text_lang = detect_language(data$text)
+table(Text = data$text_lang, useNA = "always")
+data = data %>%
+    filter(text_lang == "en")
+data
+
+```
+```{r}
+data <- data %>%
+    mutate(id = 1:nrow(data))
+
+
+text <- data %>%
+    select(text, id)
+text
+```
+```{r}
+tidy_text <- text %>%
+    unnest_tweets(word, text) %>%
+    anti_join(stop_words) %>%
+    count(id, word)
+```
+```{r}
+dtm <- tidy_text %>%
+    cast_dtm(id, word, n)
+
+dtm
+```
+```{r}
+set.seed(123456)
+train <- sample(rownames(dtm), nrow(dtm) * 0.75)
+dtm_train <- dtm[rownames(dtm) %in% train, ]
+dtm_test <- dtm[!rownames(dtm) %in% train, ]
+
+
+topic <- data.frame(k = c(5, 15, 25, 30, 35), perplexity = NA)
+
+for (i in 1:nrow(topic)) {
+    print(topic$k[i])
+    m = LDA(dtm_train, method = "Gibbs", k = topic$k[i], control = list(alpha = 0.01,
+        seed = 123456))
+    topic$perplexity[i] = perplexity(m, dtm_test)
+}
+
+```
+```{r}
+ggplot(topic, aes(x = k, y = perplexity)) + geom_line(col = "Red") +
+    theme_bw()
+```
+```{r}
+m <- LDA(dtm, method = "Gibbs", k = 15, control = list(alpha = 0.01,
+    seed = 123456))
+terms(m, 7)
+
+
+
+```
+```{r}
+tidy_topics <- tidy(m, matrix = "beta")  #per topic per word probabilities
+
+tidy_topics
+```
+```{r}
+top_terms <- tidy_topics %>%
+    group_by(topic) %>%
+    slice_max(beta, n = 7, with_ties = F) %>%
+    ungroup() %>%
+    arrange(topic, -beta)
+
+top_terms %>%
+    mutate(term = reorder_within(term, beta, topic)) %>%
+    ggplot(aes(beta, term)) + geom_col(show.legend = F, fill = "red") +
+    facet_wrap(~topic, scales = "free") + scale_y_reordered() +
+    theme_bw()
+```
+```{r}
+word_log <- augment(m, dtm)
+
+word_log
+word_log %>%
+    count(term) %>%
+    with(wordcloud(scale = c(2, 0.7), term, n, max.words = 100,
+        min.freq = 2, random.order = F, rot.per = 0.15, colors = brewer.pal(8,
+            "Paired")))
+```
+```{r}
+tidy_gamma <- tidy(m, matrix = "gamma")
+
+tidy_gamma
+```
+```{r}
+doc_class <- tidy_gamma %>%
+    group_by(document) %>%
+    slice_max(gamma) %>%
+    ungroup() %>%
+    arrange(as.numeric(document))
+
+
+doc_class <- doc_class %>%
+    anti_join(doc_class %>%
+        select(document) %>%
+        mutate(dup = duplicated(document)) %>%
+        filter(dup == "TRUE"))
+
+doc_log <- data %>%
+    mutate(id = as.character(id)) %>%
+    rename(document = "id") %>%
+    inner_join(doc_class)
+
+doc_log
+```
+```{r}
+doc_log %>%
+    count(topic)
+```
+```{r}
+doc_log %>%
+    mutate(year = year(created_at)) %>%
+    group_by(year) %>%
+    count(topic)
+```
